@@ -1,0 +1,6 @@
+{
+  "name": "Structura — Universal Data Entry App Builder",
+  "description": "Professional no-code platform for building custom data entry applications, visual drag-and-drop forms, dynamic database schemas, conditional logic, records management, and standalone published apps.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

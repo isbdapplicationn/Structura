@@ -1,0 +1,462 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny all by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedSignedIn() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isBootstrappedSuperAdmin() {
+      return isVerifiedSignedIn() && request.auth.token.email == 'najmulislamn1990@gmail.com';
+    }
+
+    function isAppOwner(appId) {
+      return isVerifiedSignedIn()
+        && exists(/databases/$(database)/documents/apps/$(appId))
+        && get(/databases/$(database)/documents/apps/$(appId)).data.ownerId == request.auth.uid;
+    }
+
+    function hasAppRole(appId, roles) {
+      return isVerifiedSignedIn()
+        && exists(/databases/$(database)/documents/apps/$(appId)/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/apps/$(appId)/members/$(request.auth.uid)).data.role in roles;
+    }
+
+    function isAppAdmin(appId) {
+      return isBootstrappedSuperAdmin() || isAppOwner(appId) || hasAppRole(appId, ['admin']);
+    }
+
+    function isAppEditor(appId) {
+      return isBootstrappedSuperAdmin() || isAppOwner(appId) || hasAppRole(appId, ['admin', 'editor']);
+    }
+
+    function isAppViewer(appId) {
+      return isBootstrappedSuperAdmin() || isAppOwner(appId) || hasAppRole(appId, ['admin', 'editor', 'viewer']);
+    }
+
+    function isPublicSubmissionAllowed(appId, slug) {
+      return isValidId(slug)
+        && exists(/databases/$(database)/documents/publicApps/$(slug))
+        && get(/databases/$(database)/documents/publicApps/$(slug)).data.appId == appId;
+    }
+
+    // Entity validation blueprints
+    function isValidStringList(arr, maxLen) {
+      return arr is list && arr.size() <= maxLen && (arr.size() == 0 || arr[0] is string);
+    }
+
+    function isValidMapList(arr, maxLen) {
+      return arr is list && arr.size() <= maxLen && (arr.size() == 0 || arr[0] is map);
+    }
+
+    function isValidUserCreate(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'status', 'language', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'role', 'status', 'language', 'createdAt', 'updatedAt'])
+        && data.uid == userId
+        && data.uid == request.auth.uid
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 512))
+        && (
+          (isBootstrappedSuperAdmin() && data.role == 'super_admin')
+          || (data.role == 'admin')
+        )
+        && data.status == 'active'
+        && data.language in ['en', 'bn']
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function isValidUserUpdate(data) {
+      return data.uid == existing().uid
+        && data.email == existing().email
+        && data.createdAt == existing().createdAt
+        && data.updatedAt == request.time
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 512))
+        && data.role in ['super_admin', 'admin', 'editor', 'viewer']
+        && data.status in ['active', 'suspended']
+        && data.language in ['en', 'bn'];
+    }
+
+    function isValidApp(data, appId) {
+      return data.keys().hasAll(['id', 'name', 'slug', 'description', 'icon', 'themeColor', 'status', 'publishAccess', 'publishedVersion', 'draftVersion', 'ownerId', 'ownerEmail', 'memberUids', 'formsCount', 'recordsCount', 'fieldsCount', 'layoutConfig', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'name', 'slug', 'description', 'icon', 'themeColor', 'coverImage', 'status', 'publishAccess', 'publishPassword', 'publishedVersion', 'draftVersion', 'ownerId', 'ownerEmail', 'memberUids', 'formsCount', 'recordsCount', 'fieldsCount', 'layoutConfig', 'createdAt', 'updatedAt'])
+        && data.id == appId
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 120 && data.slug.matches('^[a-z0-9\\-]+$')
+        && data.description is string && data.description.size() <= 1000
+        && data.icon is string && data.icon.size() >= 1 && data.icon.size() <= 64
+        && data.themeColor is string && data.themeColor.size() >= 3 && data.themeColor.size() <= 32
+        && (!('coverImage' in data) || (data.coverImage is string && data.coverImage.size() <= 512))
+        && data.status in ['draft', 'published', 'archived']
+        && data.publishAccess in ['private', 'team', 'public', 'password', 'authenticated']
+        && (!('publishPassword' in data) || (data.publishPassword is string && data.publishPassword.size() <= 128))
+        && data.publishedVersion is number && data.publishedVersion >= 0
+        && data.draftVersion is number && data.draftVersion >= 1
+        && data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128
+        && data.ownerEmail is string && data.ownerEmail.size() <= 254
+        && isValidStringList(data.memberUids, 50)
+        && data.formsCount is number && data.formsCount >= 0
+        && data.recordsCount is number && data.recordsCount >= 0
+        && data.fieldsCount is number && data.fieldsCount >= 0
+        && data.layoutConfig is map
+        && data.updatedAt == request.time;
+    }
+
+    function isValidForm(data, appId, formId) {
+      return data.keys().hasAll(['id', 'appId', 'appOwnerId', 'memberUids', 'name', 'description', 'tableName', 'isMultiStep', 'steps', 'fields', 'appearance', 'version', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'appId', 'appOwnerId', 'memberUids', 'name', 'description', 'tableName', 'isMultiStep', 'steps', 'fields', 'appearance', 'publishedSnapshot', 'version', 'createdAt', 'updatedAt'])
+        && data.id == formId
+        && data.appId == appId
+        && data.appOwnerId is string && data.appOwnerId.size() >= 1 && data.appOwnerId.size() <= 128
+        && isValidStringList(data.memberUids, 50)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.description is string && data.description.size() <= 1000
+        && data.tableName is string && data.tableName.size() >= 1 && data.tableName.size() <= 120
+        && data.isMultiStep is bool
+        && isValidMapList(data.steps, 20)
+        && isValidMapList(data.fields, 150)
+        && data.appearance is map
+        && (!('publishedSnapshot' in data) || data.publishedSnapshot is map)
+        && data.version is number && data.version >= 1
+        && data.updatedAt == request.time;
+    }
+
+    function isValidTable(data, appId, tableId) {
+      return data.keys().hasAll(['id', 'appId', 'appOwnerId', 'memberUids', 'name', 'label', 'primaryKey', 'columns', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'appId', 'appOwnerId', 'memberUids', 'formId', 'name', 'label', 'primaryKey', 'columns', 'createdAt', 'updatedAt'])
+        && data.id == tableId
+        && data.appId == appId
+        && data.appOwnerId is string && data.appOwnerId.size() >= 1 && data.appOwnerId.size() <= 128
+        && isValidStringList(data.memberUids, 50)
+        && (!('formId' in data) || (data.formId is string && data.formId.size() <= 128))
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.label is string && data.label.size() >= 1 && data.label.size() <= 120
+        && data.primaryKey is string && data.primaryKey.size() >= 1 && data.primaryKey.size() <= 120
+        && isValidMapList(data.columns, 150)
+        && data.updatedAt == request.time;
+    }
+
+    function isValidRecord(data, appId, recordId) {
+      return data.keys().hasAll(['id', 'appId', 'appOwnerId', 'memberUids', 'formId', 'tableId', 'autoNumber', 'data', 'status', 'createdBy', 'createdByEmail', 'updatedBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'appId', 'appOwnerId', 'memberUids', 'formId', 'tableId', 'autoNumber', 'data', 'status', 'isPublicSubmission', 'publicSlug', 'createdBy', 'createdByEmail', 'updatedBy', 'createdAt', 'updatedAt'])
+        && data.id == recordId
+        && data.appId == appId
+        && data.appOwnerId is string && data.appOwnerId.size() >= 1 && data.appOwnerId.size() <= 128
+        && isValidStringList(data.memberUids, 50)
+        && data.formId is string && data.formId.size() >= 1 && data.formId.size() <= 128
+        && data.tableId is string && data.tableId.size() <= 128
+        && data.autoNumber is number && data.autoNumber >= 0
+        && data.data is map
+        && data.status in ['active', 'draft', 'archived']
+        && (!('isPublicSubmission' in data) || data.isPublicSubmission is bool)
+        && (!('publicSlug' in data) || (data.publicSlug is string && data.publicSlug.size() <= 120))
+        && data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128
+        && data.createdByEmail is string && data.createdByEmail.size() <= 254
+        && data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 128
+        && data.updatedAt == request.time;
+    }
+
+    function isValidMember(data, memberId) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'appOwnerId', 'memberUids', 'addedBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'appOwnerId', 'memberUids', 'addedBy', 'createdAt', 'updatedAt'])
+        && data.uid == memberId
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.role in ['admin', 'editor', 'viewer']
+        && data.appOwnerId is string && data.appOwnerId.size() >= 1 && data.appOwnerId.size() <= 128
+        && isValidStringList(data.memberUids, 50)
+        && data.addedBy is string && data.addedBy.size() >= 1 && data.addedBy.size() <= 128
+        && data.updatedAt == request.time;
+    }
+
+    function isValidFilterPreset(data, appId, presetId) {
+      return data.keys().hasAll(['id', 'appId', 'appOwnerId', 'memberUids', 'formId', 'name', 'filters', 'createdBy', 'createdAt'])
+        && data.keys().hasOnly(['id', 'appId', 'appOwnerId', 'memberUids', 'formId', 'name', 'filters', 'createdBy', 'createdAt'])
+        && data.id == presetId
+        && data.appId == appId
+        && data.appOwnerId is string && data.appOwnerId.size() >= 1 && data.appOwnerId.size() <= 128
+        && isValidStringList(data.memberUids, 50)
+        && data.formId is string && data.formId.size() >= 1 && data.formId.size() <= 128
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && isValidMapList(data.filters, 30)
+        && data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128
+        && data.createdAt == request.time;
+    }
+
+    function isValidPublicApp(data, slug) {
+      return data.keys().hasAll(['slug', 'appId', 'ownerId', 'appName', 'description', 'icon', 'themeColor', 'publishAccess', 'publishedVersion', 'forms', 'updatedAt'])
+        && data.keys().hasOnly(['slug', 'appId', 'ownerId', 'appName', 'description', 'icon', 'themeColor', 'publishAccess', 'publishPassword', 'publishedVersion', 'forms', 'updatedAt'])
+        && data.slug == slug
+        && data.appId is string && isValidId(data.appId)
+        && data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128
+        && data.appName is string && data.appName.size() >= 1 && data.appName.size() <= 120
+        && data.description is string && data.description.size() <= 1000
+        && data.icon is string && data.icon.size() >= 1 && data.icon.size() <= 64
+        && data.themeColor is string && data.themeColor.size() >= 3 && data.themeColor.size() <= 32
+        && data.publishAccess in ['public', 'password']
+        && (!('publishPassword' in data) || (data.publishPassword is string && data.publishPassword.size() <= 128))
+        && data.publishedVersion is number && data.publishedVersion >= 1
+        && isValidMapList(data.forms, 30)
+        && data.updatedAt == request.time;
+    }
+
+    function isValidSettings(data, settingId) {
+      return data.keys().hasAll(['userId', 'platformName', 'language', 'timezone', 'dateFormat', 'numberFormat', 'themeMode', 'defaultPageSize', 'sidebarCollapsed', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'platformName', 'language', 'timezone', 'dateFormat', 'numberFormat', 'themeMode', 'defaultPageSize', 'sidebarCollapsed', 'updatedAt'])
+        && data.userId == settingId
+        && data.platformName is string && data.platformName.size() >= 1 && data.platformName.size() <= 120
+        && data.language in ['en', 'bn']
+        && data.timezone is string && data.timezone.size() >= 1 && data.timezone.size() <= 64
+        && data.dateFormat is string && data.dateFormat.size() >= 1 && data.dateFormat.size() <= 32
+        && data.numberFormat is string && data.numberFormat.size() >= 1 && data.numberFormat.size() <= 32
+        && data.themeMode in ['light', 'dark', 'system']
+        && data.defaultPageSize is number && data.defaultPageSize >= 5 && data.defaultPageSize <= 100
+        && data.sidebarCollapsed is bool
+        && data.updatedAt == request.time;
+    }
+
+    function isValidAuditLogCreate(data, logId) {
+      return data.keys().hasAll(['id', 'actorUid', 'actorEmail', 'action', 'targetType', 'targetId', 'targetName', 'appId', 'details', 'createdAt'])
+        && data.keys().hasOnly(['id', 'actorUid', 'actorEmail', 'action', 'targetType', 'targetId', 'targetName', 'appId', 'details', 'createdAt'])
+        && data.id == logId
+        && data.actorUid == request.auth.uid
+        && data.actorEmail is string && data.actorEmail.size() <= 254
+        && data.action is string && data.action.size() >= 1 && data.action.size() <= 120
+        && data.targetType is string && data.targetType.size() >= 1 && data.targetType.size() <= 64
+        && data.targetId is string && data.targetId.size() >= 1 && data.targetId.size() <= 128
+        && data.targetName is string && data.targetName.size() <= 200
+        && data.appId is string && data.appId.size() <= 128
+        && data.details is string && data.details.size() <= 500
+        && data.createdAt == request.time;
+    }
+
+    // Connection check helper
+    match /test/{docId} {
+      allow get: if docId == 'connection';
+      allow list, write: if false;
+    }
+
+    // Users collection (PII isolated to owner or Super Admin)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isVerifiedSignedIn() && (request.auth.uid == userId || isBootstrappedSuperAdmin());
+      allow list: if isBootstrappedSuperAdmin();
+      allow create: if isValidId(userId) && isVerifiedSignedIn() && isValidUserCreate(incoming(), userId);
+      allow update: if isValidId(userId) && isVerifiedSignedIn() && isValidUserUpdate(incoming()) && (
+        (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'language', 'updatedAt']))
+        || (isBootstrappedSuperAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'status', 'displayName', 'updatedAt']))
+      );
+      allow delete: if isValidId(userId) && isBootstrappedSuperAdmin() && userId != request.auth.uid;
+    }
+
+    // Applications root collection
+    match /apps/{appId} {
+      allow get: if isValidId(appId) && (isAppViewer(appId) || (isVerifiedSignedIn() && existing().publishAccess == 'authenticated'));
+      allow list: if isVerifiedSignedIn() && (
+        existing().ownerId == request.auth.uid
+        || isBootstrappedSuperAdmin()
+        || (request.auth.uid in existing().memberUids)
+        || existing().publishAccess == 'authenticated'
+      );
+      allow create: if isValidId(appId)
+        && isVerifiedSignedIn()
+        && isValidApp(incoming(), appId)
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(appId)
+        && isAppAdmin(appId)
+        && isValidApp(incoming(), appId)
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && (
+          isBootstrappedSuperAdmin()
+          || incoming().diff(existing()).affectedKeys().hasOnly(['name', 'slug', 'description', 'icon', 'themeColor', 'coverImage', 'status', 'publishAccess', 'publishPassword', 'publishedVersion', 'draftVersion', 'memberUids', 'formsCount', 'recordsCount', 'fieldsCount', 'layoutConfig', 'updatedAt'])
+        );
+      allow delete: if isValidId(appId) && (isBootstrappedSuperAdmin() || isAppOwner(appId));
+
+      // Forms subcollection
+      match /forms/{formId} {
+        allow get: if isValidId(appId) && isValidId(formId) && isAppViewer(appId);
+        allow list: if isVerifiedSignedIn() && (
+          existing().appOwnerId == request.auth.uid
+          || isBootstrappedSuperAdmin()
+          || (request.auth.uid in existing().memberUids)
+        );
+        allow create: if isValidId(appId) && isValidId(formId)
+          && isAppAdmin(appId)
+          && isValidForm(incoming(), appId, formId)
+          && incoming().appOwnerId == get(/databases/$(database)/documents/apps/$(appId)).data.ownerId
+          && incoming().createdAt == request.time;
+        allow update: if isValidId(appId) && isValidId(formId)
+          && isAppAdmin(appId)
+          && isValidForm(incoming(), appId, formId)
+          && incoming().appOwnerId == existing().appOwnerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'tableName', 'isMultiStep', 'steps', 'fields', 'appearance', 'publishedSnapshot', 'version', 'memberUids', 'updatedAt']);
+        allow delete: if isValidId(appId) && isValidId(formId) && isAppAdmin(appId);
+      }
+
+      // Database Tables subcollection
+      match /tables/{tableId} {
+        allow get: if isValidId(appId) && isValidId(tableId) && isAppViewer(appId);
+        allow list: if isVerifiedSignedIn() && (
+          existing().appOwnerId == request.auth.uid
+          || isBootstrappedSuperAdmin()
+          || (request.auth.uid in existing().memberUids)
+        );
+        allow create: if isValidId(appId) && isValidId(tableId)
+          && isAppAdmin(appId)
+          && isValidTable(incoming(), appId, tableId)
+          && incoming().appOwnerId == get(/databases/$(database)/documents/apps/$(appId)).data.ownerId
+          && incoming().createdAt == request.time;
+        allow update: if isValidId(appId) && isValidId(tableId)
+          && isAppAdmin(appId)
+          && isValidTable(incoming(), appId, tableId)
+          && incoming().appOwnerId == existing().appOwnerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'label', 'primaryKey', 'columns', 'formId', 'memberUids', 'updatedAt']);
+        allow delete: if isValidId(appId) && isValidId(tableId) && isAppAdmin(appId);
+      }
+
+      // Data Records subcollection
+      match /records/{recordId} {
+        allow get: if isValidId(appId) && isValidId(recordId) && isAppViewer(appId);
+        allow list: if isVerifiedSignedIn() && (
+          existing().appOwnerId == request.auth.uid
+          || isBootstrappedSuperAdmin()
+          || (request.auth.uid in existing().memberUids)
+        );
+        allow create: if isValidId(appId) && isValidId(recordId)
+          && isValidRecord(incoming(), appId, recordId)
+          && incoming().appOwnerId == get(/databases/$(database)/documents/apps/$(appId)).data.ownerId
+          && incoming().createdAt == request.time
+          && (
+            (isAppEditor(appId) && incoming().createdBy == request.auth.uid)
+            || (
+              ('isPublicSubmission' in incoming())
+              && incoming().isPublicSubmission == true
+              && ('publicSlug' in incoming())
+              && isPublicSubmissionAllowed(appId, incoming().publicSlug)
+              && incoming().createdBy == 'public-respondent'
+            )
+          );
+        allow update: if isValidId(appId) && isValidId(recordId)
+          && isAppEditor(appId)
+          && isValidRecord(incoming(), appId, recordId)
+          && incoming().appOwnerId == existing().appOwnerId
+          && incoming().createdBy == existing().createdBy
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedBy == request.auth.uid
+          && incoming().diff(existing()).affectedKeys().hasOnly(['data', 'status', 'tableId', 'memberUids', 'updatedBy', 'updatedAt']);
+        allow delete: if isValidId(appId) && isValidId(recordId) && isAppEditor(appId);
+      }
+
+      // App Collaborator Members subcollection
+      match /members/{memberId} {
+        allow get: if isValidId(appId) && isValidId(memberId) && isAppViewer(appId);
+        allow list: if isVerifiedSignedIn() && (
+          existing().appOwnerId == request.auth.uid
+          || isBootstrappedSuperAdmin()
+          || (request.auth.uid in existing().memberUids)
+        );
+        allow create: if isValidId(appId) && isValidId(memberId)
+          && isAppAdmin(appId)
+          && isValidMember(incoming(), memberId)
+          && incoming().appOwnerId == get(/databases/$(database)/documents/apps/$(appId)).data.ownerId
+          && incoming().addedBy == request.auth.uid
+          && incoming().createdAt == request.time;
+        allow update: if isValidId(appId) && isValidId(memberId)
+          && isAppAdmin(appId)
+          && isValidMember(incoming(), memberId)
+          && incoming().appOwnerId == existing().appOwnerId
+          && incoming().addedBy == existing().addedBy
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'displayName', 'memberUids', 'updatedAt']);
+        allow delete: if isValidId(appId) && isValidId(memberId) && isAppAdmin(appId);
+      }
+
+      // Saved Filter Presets subcollection
+      match /filterPresets/{presetId} {
+        allow get: if isValidId(appId) && isValidId(presetId) && isAppViewer(appId);
+        allow list: if isVerifiedSignedIn() && (
+          existing().appOwnerId == request.auth.uid
+          || isBootstrappedSuperAdmin()
+          || (request.auth.uid in existing().memberUids)
+        );
+        allow create: if isValidId(appId) && isValidId(presetId)
+          && isAppViewer(appId)
+          && isValidFilterPreset(incoming(), appId, presetId)
+          && incoming().appOwnerId == get(/databases/$(database)/documents/apps/$(appId)).data.ownerId
+          && incoming().createdBy == request.auth.uid;
+        allow update: if false;
+        allow delete: if isValidId(appId) && isValidId(presetId) && (isAppAdmin(appId) || existing().createdBy == request.auth.uid);
+      }
+    }
+
+    // Public published form snapshot (by slug, no list allowed)
+    match /publicApps/{slug} {
+      allow get: if isValidId(slug);
+      allow list: if false;
+      allow create: if isValidId(slug)
+        && isVerifiedSignedIn()
+        && isValidPublicApp(incoming(), slug)
+        && (
+          isBootstrappedSuperAdmin()
+          || get(/databases/$(database)/documents/apps/$(incoming().appId)).data.ownerId == request.auth.uid
+        )
+        && incoming().ownerId == get(/databases/$(database)/documents/apps/$(incoming().appId)).data.ownerId;
+      allow update: if isValidId(slug)
+        && isVerifiedSignedIn()
+        && isValidPublicApp(incoming(), slug)
+        && incoming().appId == existing().appId
+        && incoming().ownerId == existing().ownerId
+        && (
+          isBootstrappedSuperAdmin()
+          || existing().ownerId == request.auth.uid
+        )
+        && incoming().diff(existing()).affectedKeys().hasOnly(['appName', 'description', 'icon', 'themeColor', 'publishAccess', 'publishPassword', 'publishedVersion', 'forms', 'updatedAt']);
+      allow delete: if isValidId(slug) && isVerifiedSignedIn() && (isBootstrappedSuperAdmin() || existing().ownerId == request.auth.uid);
+    }
+
+    // User workspace settings
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId) && isVerifiedSignedIn() && (request.auth.uid == settingId || isBootstrappedSuperAdmin());
+      allow list: if false;
+      allow create: if isValidId(settingId) && isVerifiedSignedIn() && request.auth.uid == settingId && isValidSettings(incoming(), settingId);
+      allow update: if isValidId(settingId) && isVerifiedSignedIn() && request.auth.uid == settingId && isValidSettings(incoming(), settingId)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['platformName', 'language', 'timezone', 'dateFormat', 'numberFormat', 'themeMode', 'defaultPageSize', 'sidebarCollapsed', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // Immutable audit logs
+    match /auditLogs/{logId} {
+      allow get: if isValidId(logId) && isVerifiedSignedIn() && (existing().actorUid == request.auth.uid || isBootstrappedSuperAdmin());
+      allow list: if isVerifiedSignedIn() && (existing().actorUid == request.auth.uid || isBootstrappedSuperAdmin());
+      allow create: if isValidId(logId) && isVerifiedSignedIn() && isValidAuditLogCreate(incoming(), logId);
+      allow update, delete: if false;
+    }
+  }
+}

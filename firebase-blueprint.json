@@ -1,0 +1,245 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Platform user account with role-based access control and localization preferences.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "photoURL": { "type": "string", "maxLength": 512 },
+        "role": { "type": "string", "enum": ["super_admin", "admin", "editor", "viewer"] },
+        "status": { "type": "string", "enum": ["active", "suspended"] },
+        "language": { "type": "string", "enum": ["en", "bn"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "status", "createdAt", "updatedAt"]
+    },
+    "Application": {
+      "title": "Application",
+      "description": "A customizable no-code data entry application containing forms, database tables, records, and publishing settings.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "slug": { "type": "string", "pattern": "^[a-z0-9\\-]+$", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "icon": { "type": "string", "maxLength": 64 },
+        "themeColor": { "type": "string", "maxLength": 32 },
+        "coverImage": { "type": "string", "maxLength": 512 },
+        "status": { "type": "string", "enum": ["draft", "published", "archived"] },
+        "publishAccess": { "type": "string", "enum": ["private", "team", "public", "password", "authenticated"] },
+        "publishPassword": { "type": "string", "maxLength": 128 },
+        "publishedVersion": { "type": "number" },
+        "draftVersion": { "type": "number" },
+        "ownerId": { "type": "string", "maxLength": 128 },
+        "ownerEmail": { "type": "string", "maxLength": 254 },
+        "memberUids": { "type": "array" },
+        "formsCount": { "type": "number" },
+        "recordsCount": { "type": "number" },
+        "fieldsCount": { "type": "number" },
+        "layoutConfig": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "slug", "status", "publishAccess", "ownerId", "createdAt", "updatedAt"]
+    },
+    "FormDefinition": {
+      "title": "FormDefinition",
+      "description": "Dynamic visual form schema with fields, validation rules, conditional logic, multi-step configuration, and styling.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "appId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "appOwnerId": { "type": "string", "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "tableName": { "type": "string", "maxLength": 120 },
+        "isMultiStep": { "type": "boolean" },
+        "steps": { "type": "array" },
+        "fields": { "type": "array" },
+        "appearance": { "type": "object" },
+        "version": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "appId", "appOwnerId", "name", "fields", "createdAt", "updatedAt"]
+    },
+    "DatabaseTable": {
+      "title": "DatabaseTable",
+      "description": "Structured table schema generated or customized for an application, supporting column constraints and relationships.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "appId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "appOwnerId": { "type": "string", "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "formId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "primaryKey": { "type": "string", "maxLength": 120 },
+        "columns": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "appId", "appOwnerId", "name", "label", "primaryKey", "columns", "createdAt", "updatedAt"]
+    },
+    "DataRecord": {
+      "title": "DataRecord",
+      "description": "Individual data entry record belonging to an application form and database table.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "appId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "appOwnerId": { "type": "string", "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "formId": { "type": "string", "maxLength": 128 },
+        "tableId": { "type": "string", "maxLength": 128 },
+        "autoNumber": { "type": "number" },
+        "data": { "type": "object" },
+        "status": { "type": "string", "enum": ["active", "draft", "archived"] },
+        "isPublicSubmission": { "type": "boolean" },
+        "publicSlug": { "type": "string", "maxLength": 120 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdByEmail": { "type": "string", "maxLength": 254 },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "appId", "appOwnerId", "formId", "data", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "AppMember": {
+      "title": "AppMember",
+      "description": "Application-level collaborator role assignment.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "role": { "type": "string", "enum": ["admin", "editor", "viewer"] },
+        "appOwnerId": { "type": "string", "maxLength": 128 },
+        "addedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "appOwnerId", "addedBy", "createdAt", "updatedAt"]
+    },
+    "FilterPreset": {
+      "title": "FilterPreset",
+      "description": "Saved search and multi-condition filter preset for a data records table.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "appId": { "type": "string", "maxLength": 128 },
+        "appOwnerId": { "type": "string", "maxLength": 128 },
+        "formId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "filters": { "type": "array" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "appId", "appOwnerId", "name", "filters", "createdBy", "createdAt"]
+    },
+    "PublicAppSnapshot": {
+      "title": "PublicAppSnapshot",
+      "description": "Sanitized published runtime snapshot of an application form accessible via its public URL slug.",
+      "type": "object",
+      "properties": {
+        "slug": { "type": "string", "pattern": "^[a-z0-9\\-]+$", "maxLength": 120 },
+        "appId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "ownerId": { "type": "string", "maxLength": 128 },
+        "appName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "icon": { "type": "string", "maxLength": 64 },
+        "themeColor": { "type": "string", "maxLength": 32 },
+        "publishAccess": { "type": "string", "enum": ["public", "password"] },
+        "publishPassword": { "type": "string", "maxLength": 128 },
+        "publishedVersion": { "type": "number" },
+        "forms": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["slug", "appId", "ownerId", "appName", "publishAccess", "forms", "updatedAt"]
+    },
+    "WorkspaceSettings": {
+      "title": "WorkspaceSettings",
+      "description": "General, appearance, data, and security preferences for a user workspace.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "platformName": { "type": "string", "maxLength": 120 },
+        "language": { "type": "string", "enum": ["en", "bn"] },
+        "timezone": { "type": "string", "maxLength": 64 },
+        "dateFormat": { "type": "string", "maxLength": 32 },
+        "numberFormat": { "type": "string", "maxLength": 32 },
+        "themeMode": { "type": "string", "enum": ["light", "dark", "system"] },
+        "defaultPageSize": { "type": "number" },
+        "sidebarCollapsed": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "language", "themeMode", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable activity and security audit trail entry.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "actorUid": { "type": "string", "maxLength": 128 },
+        "actorEmail": { "type": "string", "maxLength": 254 },
+        "action": { "type": "string", "maxLength": 120 },
+        "targetType": { "type": "string", "maxLength": 64 },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "targetName": { "type": "string", "maxLength": 200 },
+        "appId": { "type": "string", "maxLength": 128 },
+        "details": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "actorUid", "action", "targetType", "targetId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles and RBAC roles."
+    },
+    "/apps/{appId}": {
+      "schema": { "$ref": "#/entities/Application" },
+      "description": "Custom data entry applications."
+    },
+    "/apps/{appId}/forms/{formId}": {
+      "schema": { "$ref": "#/entities/FormDefinition" },
+      "description": "Dynamic form definitions belonging to an application."
+    },
+    "/apps/{appId}/tables/{tableId}": {
+      "schema": { "$ref": "#/entities/DatabaseTable" },
+      "description": "Database table schemas belonging to an application."
+    },
+    "/apps/{appId}/records/{recordId}": {
+      "schema": { "$ref": "#/entities/DataRecord" },
+      "description": "Data entry records submitted to an application."
+    },
+    "/apps/{appId}/members/{memberId}": {
+      "schema": { "$ref": "#/entities/AppMember" },
+      "description": "Collaborator permissions for an application."
+    },
+    "/apps/{appId}/filterPresets/{presetId}": {
+      "schema": { "$ref": "#/entities/FilterPreset" },
+      "description": "Saved search and filter presets for an application."
+    },
+    "/publicApps/{slug}": {
+      "schema": { "$ref": "#/entities/PublicAppSnapshot" },
+      "description": "Published standalone form snapshot accessible by URL slug."
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/WorkspaceSettings" },
+      "description": "User workspace preferences."
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable activity and audit logs."
+    }
+  }
+}
